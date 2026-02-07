@@ -1,0 +1,9 @@
+fastapi==0.116.1
+uvicorn[standard]==0.35.0
+pydantic==2.11.7
+python-dotenv==1.1.1
+anthropic>=0.45.0
+stagehand>=0.5.0
+browserbase>=1.4.0
+cartesia>=1.0.0
+python-multipart>=0.0.9
