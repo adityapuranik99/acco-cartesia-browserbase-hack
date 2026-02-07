@@ -1,0 +1,182 @@
+:root {
+  color-scheme: light;
+  --bg: #f2efe8;
+  --panel: #fffefb;
+  --ink: #172333;
+  --muted: #5f6e80;
+  --line: #d8d2c5;
+  --accent: #0f766e;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  background: radial-gradient(circle at top right, #f8f4eb 0%, var(--bg) 65%);
+  color: var(--ink);
+}
+
+.layout {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+h1 {
+  margin: 0;
+}
+
+.subtitle {
+  margin: 6px 0 18px;
+  color: var(--muted);
+}
+
+.grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 2fr 1fr;
+}
+
+.side-column {
+  display: grid;
+  gap: 16px;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.panel header h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.muted {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.browser-frame {
+  margin-top: 10px;
+  min-height: 280px;
+  border: 1px dashed #b2ac9f;
+  border-radius: 10px;
+  padding: 12px;
+  background: #fcf8f0;
+}
+
+.live-view-frame {
+  width: 100%;
+  min-height: 480px;
+  border: 0;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.voice-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.mic-controls {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+}
+
+.mic-controls button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ptt-button {
+  width: 100%;
+  background: #0f766e;
+}
+
+.ptt-button.active {
+  background: #b91c1c;
+}
+
+textarea {
+  resize: vertical;
+  border-radius: 8px;
+  border: 1px solid #c5c0b4;
+  padding: 10px;
+  font: inherit;
+}
+
+button {
+  border: 0;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-weight: 700;
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+}
+
+.risk-badge {
+  margin-top: 8px;
+  width: fit-content;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-weight: 700;
+}
+
+.risk-badge.safe {
+  color: #14532d;
+  background: #dcfce7;
+}
+
+.risk-badge.caution {
+  color: #92400e;
+  background: #fef3c7;
+}
+
+.risk-badge.high-risk {
+  color: #7f1d1d;
+  background: #fee2e2;
+}
+
+.risk-badge.danger {
+  color: #ffffff;
+  background: #b91c1c;
+}
+
+.log-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.log-list li {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  display: grid;
+  gap: 4px;
+}
+
+.log-list strong {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+@media (max-width: 920px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
