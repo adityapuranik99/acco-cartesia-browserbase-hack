@@ -35,6 +35,8 @@ class Settings:
     cartesia_voice_id_danger: str = os.getenv("CARTESIA_VOICE_ID_DANGER", "")
     enable_cartesia_stt: bool = os.getenv("ENABLE_CARTESIA_STT", "0").lower() in {"1", "true", "yes"}
     cartesia_stt_model: str = os.getenv("CARTESIA_STT_MODEL", "ink-whisper")
+    voice_mode: str = os.getenv("VOICE_MODE", "ptt").strip().lower()
+    cartesia_line_agent_id: str = os.getenv("CARTESIA_LINE_AGENT_ID", "")
     exa_api_key: str = os.getenv("EXA_API_KEY", "")
     enable_exa_verification: bool = os.getenv("ENABLE_EXA_VERIFICATION", "0").lower() in {"1", "true", "yes"}
     demo_gmail_email: str = os.getenv("DEMO_GMAIL_EMAIL", "")

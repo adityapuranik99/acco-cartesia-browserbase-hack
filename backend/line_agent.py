@@ -4,6 +4,7 @@ from typing import Any
 
 from agent import AccessibilityCopilot
 from config import settings
+from ui_channel import ui_event_channel
 
 
 class AccessibilityCopilotLineAgent:
@@ -47,6 +48,7 @@ class AccessibilityCopilotLineAgent:
             if not self._started:
                 await self._copilot.start()
                 self._started = True
+            await self._publish_status("connected", metadata=self._copilot.runtime_info())
             yield self._make_agent_send_text(
                 "Hi there. I'm your accessibility co-pilot. "
                 "Tell me what website or task you want help with."
@@ -59,12 +61,14 @@ class AccessibilityCopilotLineAgent:
                 return
 
             async for server_event in self._copilot.handle_transcript(user_text):
+                await ui_event_channel.publish(server_event.model_dump_json())
                 if server_event.type == "agent_response" and server_event.text:
                     yield self._make_agent_send_text(server_event.text)
             return
 
         if event_name == "CallEnded":
             await self._shutdown()
+            await self._publish_status("call_ended")
 
     async def _shutdown(self) -> None:
         if not self._started:
@@ -100,6 +104,17 @@ class AccessibilityCopilotLineAgent:
         from line.events import AgentSendText
 
         return AgentSendText(text=text)
+
+    @staticmethod
+    async def _publish_status(text: str, metadata: dict[str, Any] | None = None) -> None:
+        payload = {
+            "type": "status",
+            "text": text,
+            "metadata": metadata or {},
+        }
+        import json
+
+        await ui_event_channel.publish(json.dumps(payload))
 
 
 async def get_agent(env: Any, call_request: Any) -> AccessibilityCopilotLineAgent:

@@ -18,7 +18,11 @@ function getLiveViewUrl(events) {
 }
 
 export default function App() {
-  const { connected, riskLevel, voiceState, events, sendTranscript, sendInterrupt } = useWebSocket();
+  const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+  const voiceMode = (import.meta.env.VITE_VOICE_MODE || 'ptt').toLowerCase();
+  const wsBase = apiBase.replace(/^http/i, 'ws');
+  const wsUrl = `${wsBase}${voiceMode === 'line' ? '/ws/ui' : '/ws'}`;
+  const { connected, riskLevel, voiceState, events, sendTranscript, sendInterrupt } = useWebSocket(wsUrl);
   const [darkMode, setDarkMode] = useState(false);
 
   useEffect(() => {
@@ -55,7 +59,13 @@ export default function App() {
           <BrowserView currentUrl={getLatestUrl(events)} liveViewUrl={getLiveViewUrl(events)} />
         </section>
         <aside className="side-stack">
-          <VoicePanel connected={connected} voiceState={voiceState} onSend={sendTranscript} onInterrupt={sendInterrupt} />
+          <VoicePanel
+            connected={connected}
+            voiceState={voiceState}
+            voiceMode={voiceMode}
+            onSend={voiceMode === 'line' ? undefined : sendTranscript}
+            onInterrupt={voiceMode === 'line' ? undefined : sendInterrupt}
+          />
           <RiskBadge riskLevel={riskLevel} connected={connected} />
           <ActivityLog events={events} />
         </aside>
@@ -67,6 +77,7 @@ export default function App() {
             <span className="footer-chip">API: Live</span>
             <span className="footer-chip">Planner: Claude</span>
             <span className="footer-chip">Browser: Browserbase + Stagehand</span>
+            <span className="footer-chip">Voice: {voiceMode.toUpperCase()}</span>
           </div>
           <div className="footer-group">
             <span>v1.0.0</span>

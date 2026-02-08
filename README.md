@@ -44,6 +44,7 @@ python line_agent.py
 ```
 
 This runs the same copilot logic via Cartesia Line's real-time voice transport.
+In Line mode, frontend UI state is streamed from `ws://localhost:8000/ws/ui`.
 
 ### 3. Run Frontend
 
@@ -134,6 +135,10 @@ ENABLE_CARTESIA_TTS=1        # Voice synthesis
 ENABLE_CARTESIA_STT=1        # Voice input
 ENABLE_EXA_VERIFICATION=1    # Domain verification
 ENABLE_FAST_RISK_MODEL=1     # Fast Haiku risk checks
+
+# Voice transport mode
+VOICE_MODE=ptt               # ptt (existing /ws + /stt) or line (Line runtime + /ws/ui)
+CARTESIA_LINE_AGENT_ID=      # optional, for your Line session/config management
 ```
 
 ### Advanced Options
@@ -221,9 +226,22 @@ ENABLE_STAGEHAND=1
 ENABLE_CARTESIA_TTS=1
 ```
 
+**Line Voice Mode** (UI-only websocket on backend + separate Line runtime):
+```bash
+# backend/.env
+VOICE_MODE=line
+
+# terminal 1
+cd backend && python main.py
+
+# terminal 2
+cd backend && python line_agent.py
+```
+
 ### WebSocket API
 
 **Connect**: `ws://localhost:8000/ws`
+**UI Stream (Line mode)**: `ws://localhost:8000/ws/ui`
 
 **Send** (client → server):
 ```json
@@ -249,6 +267,7 @@ ENABLE_CARTESIA_TTS=1
 │   ├── domain_verifier.py    # Exa domain verification
 │   ├── voice.py              # Cartesia STT/TTS
 │   ├── line_agent.py         # Optional Cartesia Line runtime
+│   ├── ui_channel.py         # In-memory UI event relay for /ws/ui
 │   ├── models.py             # Pydantic data models
 │   ├── config.py             # Environment configuration
 │   └── main.py               # FastAPI server
@@ -261,6 +280,7 @@ ENABLE_CARTESIA_TTS=1
 │   │   └── hooks/
 │   │       └── useWebSocket.js   # WebSocket connection
 │   └── index.html
+│   └── .env.example          # Frontend env template (voice mode toggle)
 ├── demo/
 │   └── fake-scam-site/       # Test scam page for development
 └── .env.example              # Configuration template

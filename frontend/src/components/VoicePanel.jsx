@@ -10,7 +10,8 @@ const VOICE_STATE_LABELS = {
 
 const BAR_COUNT = 32;
 
-export default function VoicePanel({ connected, voiceState, onSend, onInterrupt }) {
+export default function VoicePanel({ connected, voiceState, voiceMode = 'ptt', onSend, onInterrupt }) {
+  const isLineMode = voiceMode === 'line';
   const [input, setInput] = useState('Go to google.com');
   const [isListening, setIsListening] = useState(false);
   const [micSupported, setMicSupported] = useState(false);
@@ -59,6 +60,12 @@ export default function VoicePanel({ connected, voiceState, onSend, onInterrupt 
   }, [selectedDeviceId]);
 
   useEffect(() => {
+    if (isLineMode) {
+      setMicSupported(false);
+      setMicStatus('Line mode active');
+      return () => {};
+    }
+
     if (!navigator.mediaDevices || typeof MediaRecorder === 'undefined') {
       setMicSupported(false);
       setMicStatus('Mic STT not supported in this browser');
@@ -84,7 +91,7 @@ export default function VoicePanel({ connected, voiceState, onSend, onInterrupt 
         cancelAnimationFrame(animFrameRef.current);
       }
     };
-  }, [loadDevices]);
+  }, [isLineMode, loadDevices]);
 
   // Real-time visualizer driven by AnalyserNode
   const startVisualizer = useCallback((stream) => {
@@ -137,6 +144,7 @@ export default function VoicePanel({ connected, voiceState, onSend, onInterrupt 
 
   const submit = (e) => {
     e.preventDefault();
+    if (isLineMode) return;
     if (!input.trim()) return;
     onInterrupt?.();
     onSend(input.trim());
@@ -144,7 +152,7 @@ export default function VoicePanel({ connected, voiceState, onSend, onInterrupt 
   };
 
   const startMic = async () => {
-    if (!connected || isListening) return;
+    if (isLineMode || !connected || isListening) return;
     onInterrupt?.();
     try {
       if (devices.length === 0) {
@@ -212,7 +220,7 @@ export default function VoicePanel({ connected, voiceState, onSend, onInterrupt 
           }
 
           setInput(transcript);
-          onSend(transcript);
+          onSend?.(transcript);
           setMicStatus('Mic idle');
         } catch (err) {
           setMicStatus(`STT error: ${err.message}`);
@@ -259,15 +267,26 @@ export default function VoicePanel({ connected, voiceState, onSend, onInterrupt 
         <span className="card-kicker">{VOICE_STATE_LABELS[voiceState] || voiceState || 'Idle'}</span>
       </header>
 
+      {isLineMode && (
+        <>
+          <p className="mic-status-text">
+            Cartesia Line mode is active. Voice audio is handled by the Line session; this panel shows state updates.
+          </p>
+          <p className="mic-status-text">
+            Keep this dashboard open for risk badges, browser updates, and activity logs.
+          </p>
+        </>
+      )}
+
       {/* Real-time audio visualizer */}
-      <div className={`audio-visualizer ${isListening ? 'active' : ''}`} ref={barsRef}>
+      <div className={`audio-visualizer ${!isLineMode && isListening ? 'active' : ''}`} ref={barsRef}>
         {Array.from({ length: BAR_COUNT }, (_, i) => (
           <span key={i} className="viz-bar" />
         ))}
       </div>
 
       {/* Mic selector */}
-      {devices.length > 0 && (
+      {!isLineMode && devices.length > 0 && (
         <div className="mic-selector">
           <span className="material-icons-outlined mic-selector-icon">settings_voice</span>
           <select
@@ -289,7 +308,7 @@ export default function VoicePanel({ connected, voiceState, onSend, onInterrupt 
         <button
           type="button"
           className={`mic-icon-button ${isListening ? 'active' : ''}`}
-          disabled={!micSupported || !connected}
+          disabled={isLineMode || !micSupported || !connected}
           onClick={toggleMic}
           aria-label={isListening ? 'Stop listening' : 'Start listening'}
         >
@@ -304,20 +323,24 @@ export default function VoicePanel({ connected, voiceState, onSend, onInterrupt 
             </>
           )}
         </button>
-        <span className="mic-label">{isListening ? 'Tap to stop' : 'Tap to speak'}</span>
+        <span className="mic-label">
+          {isLineMode ? 'Line handles microphone input' : isListening ? 'Tap to stop' : 'Tap to speak'}
+        </span>
       </div>
 
       <p className="mic-status-text">{micStatus}</p>
 
-      <form onSubmit={submit} className="voice-form">
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Speak into mic or type transcript..."
-          rows={3}
-        />
-        <button type="submit" className="secondary-button">Send Transcript</button>
-      </form>
+      {!isLineMode && (
+        <form onSubmit={submit} className="voice-form">
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Speak into mic or type transcript..."
+            rows={3}
+          />
+          <button type="submit" className="secondary-button">Send Transcript</button>
+        </form>
+      )}
     </section>
   );
 }

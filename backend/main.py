@@ -10,6 +10,7 @@ from agent import AccessibilityCopilot
 from config import settings
 from models import ClientMessage
 from stt import SpeechTranscriber
+from ui_channel import ui_event_channel
 from voice import VoiceSynthesizer
 
 app = FastAPI(title="Accessibility Co-Pilot Backend", version="0.2.0")
@@ -107,7 +108,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                         event.metadata["audio_b64"] = audio_b64
                         event.metadata["audio_mime"] = "audio/wav"
                         event.metadata["voice_risk_profile"] = current_risk_level
-                await websocket.send_text(event.model_dump_json())
+                payload = event.model_dump_json()
+                await websocket.send_text(payload)
+                await ui_event_channel.publish(payload)
 
         while True:
             payload = await websocket.receive_json()
@@ -136,6 +139,29 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             with suppress(asyncio.CancelledError):
                 await current_task
         await copilot.shutdown()
+
+
+@app.websocket("/ws/ui")
+async def websocket_ui_endpoint(websocket: WebSocket) -> None:
+    await websocket.accept()
+    queue = await ui_event_channel.subscribe()
+    try:
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "type": "status",
+                    "text": "connected",
+                    "metadata": {"voice_mode": settings.voice_mode},
+                }
+            )
+        )
+        while True:
+            payload = await queue.get()
+            await websocket.send_text(payload)
+    except WebSocketDisconnect:
+        return
+    finally:
+        await ui_event_channel.unsubscribe(queue)
 
 
 if __name__ == "__main__":
