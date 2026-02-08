@@ -81,6 +81,10 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         safe_payment_domains=[
             d.strip().lower() for d in settings.safe_payment_domains.split(",") if d.strip()
         ],
+        demo_gmail_email=settings.demo_gmail_email,
+        demo_gmail_password=settings.demo_gmail_password,
+        demo_pge_email=settings.demo_pge_email,
+        demo_pge_password=settings.demo_pge_password,
     )
     await copilot.start()
 

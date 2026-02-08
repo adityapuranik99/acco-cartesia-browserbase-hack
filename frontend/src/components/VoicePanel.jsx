@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 const VOICE_STATE_LABELS = {
   LISTENING: 'Listening for request',
@@ -8,15 +8,55 @@ const VOICE_STATE_LABELS = {
   RESULT: 'Result ready',
 };
 
+const BAR_COUNT = 32;
+
 export default function VoicePanel({ connected, voiceState, onSend, onInterrupt }) {
   const [input, setInput] = useState('Go to google.com');
   const [isListening, setIsListening] = useState(false);
   const [micSupported, setMicSupported] = useState(false);
   const [micStatus, setMicStatus] = useState('Mic idle');
+  const [devices, setDevices] = useState([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState('');
   const mediaRecorderRef = useRef(null);
   const streamRef = useRef(null);
   const chunksRef = useRef([]);
+  const analyserRef = useRef(null);
+  const animFrameRef = useRef(null);
+  const barsRef = useRef(null);
   const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+
+  const pickRecorderMimeType = () => {
+    if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
+      return '';
+    }
+    const candidates = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+      'audio/ogg;codecs=opus',
+    ];
+    for (const candidate of candidates) {
+      if (MediaRecorder.isTypeSupported(candidate)) return candidate;
+    }
+    return '';
+  };
+
+  // Enumerate audio input devices
+  const loadDevices = useCallback(async () => {
+    try {
+      const all = await navigator.mediaDevices.enumerateDevices();
+      const mics = all.filter((d) => d.kind === 'audioinput');
+      setDevices(mics);
+      if (mics.length === 0) {
+        setMicStatus('No microphone detected');
+      }
+      if (!selectedDeviceId && mics.length > 0) {
+        setSelectedDeviceId(mics[0].deviceId);
+      }
+    } catch (_) {
+      // ignore
+    }
+  }, [selectedDeviceId]);
 
   useEffect(() => {
     if (!navigator.mediaDevices || typeof MediaRecorder === 'undefined') {
@@ -25,8 +65,11 @@ export default function VoicePanel({ connected, voiceState, onSend, onInterrupt 
       return;
     }
     setMicSupported(true);
+    loadDevices();
+    navigator.mediaDevices.addEventListener('devicechange', loadDevices);
 
     return () => {
+      navigator.mediaDevices.removeEventListener('devicechange', loadDevices);
       try {
         if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
           mediaRecorderRef.current.stop();
@@ -37,7 +80,59 @@ export default function VoicePanel({ connected, voiceState, onSend, onInterrupt 
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop());
       }
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+      }
     };
+  }, [loadDevices]);
+
+  // Real-time visualizer driven by AnalyserNode
+  const startVisualizer = useCallback((stream) => {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioCtx.createMediaStreamSource(stream);
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 128;
+    analyser.smoothingTimeConstant = 0.75;
+    source.connect(analyser);
+    analyserRef.current = { analyser, audioCtx };
+
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+    const draw = () => {
+      analyser.getByteFrequencyData(dataArray);
+      const bars = barsRef.current;
+      if (bars) {
+        const children = bars.children;
+        const step = Math.floor(dataArray.length / BAR_COUNT);
+        for (let i = 0; i < children.length; i++) {
+          const val = dataArray[i * step] || 0;
+          const pct = val / 255;
+          const h = Math.max(3, pct * 100);
+          children[i].style.height = `${h}%`;
+          children[i].style.opacity = Math.max(0.25, pct);
+        }
+      }
+      animFrameRef.current = requestAnimationFrame(draw);
+    };
+    draw();
+  }, []);
+
+  const stopVisualizer = useCallback(() => {
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    if (analyserRef.current) {
+      analyserRef.current.audioCtx.close().catch(() => {});
+      analyserRef.current = null;
+    }
+    // Reset bars to idle
+    if (barsRef.current) {
+      for (const child of barsRef.current.children) {
+        child.style.height = '3%';
+        child.style.opacity = '0.25';
+      }
+    }
   }, []);
 
   const submit = (e) => {
@@ -52,11 +147,22 @@ export default function VoicePanel({ connected, voiceState, onSend, onInterrupt 
     if (!connected || isListening) return;
     onInterrupt?.();
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (devices.length === 0) {
+        setMicStatus('No microphone detected');
+        return;
+      }
+      const constraints = { audio: selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : true };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
       chunksRef.current = [];
 
-      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      // Re-enumerate after permission grant (labels may now be available)
+      loadDevices();
+
+      startVisualizer(stream);
+
+      const mimeType = pickRecorderMimeType();
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       mediaRecorderRef.current = recorder;
 
       recorder.ondataavailable = (event) => {
@@ -68,7 +174,10 @@ export default function VoicePanel({ connected, voiceState, onSend, onInterrupt 
       recorder.onstop = async () => {
         setIsListening(false);
         setMicStatus('Transcribing...');
-        const audioBlob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        stopVisualizer();
+
+        const blobType = recorder.mimeType || 'audio/webm';
+        const audioBlob = new Blob(chunksRef.current, { type: blobType });
         chunksRef.current = [];
 
         if (streamRef.current) {
@@ -82,7 +191,8 @@ export default function VoicePanel({ connected, voiceState, onSend, onInterrupt 
         }
 
         const formData = new FormData();
-        formData.append('audio', audioBlob, 'speech.webm');
+        const extension = blobType.includes('ogg') ? 'ogg' : blobType.includes('mp4') ? 'm4a' : 'webm';
+        formData.append('audio', audioBlob, `speech.${extension}`);
 
         try {
           const response = await fetch(`${apiBase}/stt`, {
@@ -113,7 +223,14 @@ export default function VoicePanel({ connected, voiceState, onSend, onInterrupt 
       setIsListening(true);
       setMicStatus('Listening...');
     } catch (err) {
-      setMicStatus(`Mic error: ${err.message || 'permission/device issue'}`);
+      const msg = err?.name === 'NotAllowedError'
+        ? 'Microphone permission denied'
+        : err?.name === 'NotFoundError'
+          ? 'No microphone found'
+          : err?.name === 'NotReadableError'
+            ? 'Microphone is busy in another app'
+            : err.message || 'permission/device issue';
+      setMicStatus(`Mic error: ${msg}`);
     }
   };
 
@@ -139,31 +256,59 @@ export default function VoicePanel({ connected, voiceState, onSend, onInterrupt 
           <span className="material-icons-outlined">mic</span>
           Voice Control
         </h2>
-        <span className="card-kicker">Active</span>
+        <span className="card-kicker">{VOICE_STATE_LABELS[voiceState] || voiceState || 'Idle'}</span>
       </header>
-      <p className="panel-meta">WebSocket: {connected ? 'Connected' : 'Disconnected'}</p>
-      <p className="panel-meta">Assistant: {VOICE_STATE_LABELS[voiceState] || voiceState}</p>
-      <p className="panel-meta">Mic: {micStatus}</p>
-      <div className={`waveform ${isListening ? 'active' : ''}`}>
-        <span className="waveform-bar" />
-        <span className="waveform-bar" />
-        <span className="waveform-bar" />
-        <span className="waveform-bar" />
-        <span className="waveform-bar" />
-        <span className="waveform-bar" />
-        <span className="waveform-bar" />
-        <span className="waveform-bar" />
+
+      {/* Real-time audio visualizer */}
+      <div className={`audio-visualizer ${isListening ? 'active' : ''}`} ref={barsRef}>
+        {Array.from({ length: BAR_COUNT }, (_, i) => (
+          <span key={i} className="viz-bar" />
+        ))}
       </div>
-      <div className="mic-controls">
+
+      {/* Mic selector */}
+      {devices.length > 0 && (
+        <div className="mic-selector">
+          <span className="material-icons-outlined mic-selector-icon">settings_voice</span>
+          <select
+            value={selectedDeviceId}
+            onChange={(e) => setSelectedDeviceId(e.target.value)}
+            disabled={isListening}
+          >
+            {devices.map((d) => (
+              <option key={d.deviceId} value={d.deviceId}>
+                {d.label || `Microphone ${d.deviceId.slice(0, 6)}`}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Mic icon button with radiating waves */}
+      <div className="mic-button-wrap">
         <button
           type="button"
-          className={`ptt-button ${isListening ? 'active' : ''}`}
+          className={`mic-icon-button ${isListening ? 'active' : ''}`}
           disabled={!micSupported || !connected}
           onClick={toggleMic}
+          aria-label={isListening ? 'Stop listening' : 'Start listening'}
         >
-          {isListening ? 'Stop Listening' : 'Start Listening'}
+          <span className="material-icons-outlined mic-btn-icon">
+            {isListening ? 'mic' : 'mic_none'}
+          </span>
+          {isListening && (
+            <>
+              <span className="ripple r1" />
+              <span className="ripple r2" />
+              <span className="ripple r3" />
+            </>
+          )}
         </button>
+        <span className="mic-label">{isListening ? 'Tap to stop' : 'Tap to speak'}</span>
       </div>
+
+      <p className="mic-status-text">{micStatus}</p>
+
       <form onSubmit={submit} className="voice-form">
         <textarea
           value={input}

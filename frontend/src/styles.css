@@ -171,7 +171,7 @@ html.dark .icon-button {
 .content-grid {
   padding-top: 24px;
   display: grid;
-  grid-template-columns: minmax(0, 2.2fr) minmax(380px, 1fr);
+  grid-template-columns: minmax(0, 2.7fr) minmax(340px, 0.95fr);
   gap: 24px;
   align-items: start;
 }
@@ -183,7 +183,7 @@ html.dark .icon-button {
 .side-stack {
   display: grid;
   gap: 20px;
-  min-width: 380px;
+  min-width: 340px;
 }
 
 .panel {
@@ -260,7 +260,7 @@ html.dark .browser-address {
 }
 
 .browser-frame {
-  min-height: 700px;
+  min-height: 860px;
   background: #f1f5f9;
 }
 
@@ -270,13 +270,13 @@ html.dark .browser-frame {
 
 .live-view-frame {
   width: 100%;
-  min-height: 700px;
+  min-height: 860px;
   border: 0;
   display: block;
 }
 
 .browser-placeholder {
-  min-height: 700px;
+  min-height: 860px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -373,73 +373,175 @@ html.dark .panel-meta {
   color: var(--muted-dark);
 }
 
-.waveform {
+/* ── Audio visualizer (real-time mic input) ── */
+
+.audio-visualizer {
   margin-top: 10px;
   border-radius: 12px;
-  min-height: 72px;
+  height: 64px;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
-  gap: 4px;
+  gap: 2px;
+  padding: 8px 6px;
   background: #f8fafc;
+  overflow: hidden;
 }
 
-html.dark .waveform {
+html.dark .audio-visualizer {
   background: #020617;
 }
 
-.waveform-bar {
-  width: 4px;
-  border-radius: 999px;
+.viz-bar {
+  flex: 1;
+  min-width: 2px;
+  border-radius: 2px 2px 0 0;
   background: var(--primary);
-  height: 10px;
-  animation: wave 1.15s ease-in-out infinite;
-  animation-play-state: paused;
-  opacity: 0.45;
+  height: 3%;
+  opacity: 0.25;
+  transition: height 0.06s ease-out, opacity 0.06s ease-out;
 }
 
-.waveform.active .waveform-bar {
-  animation-play-state: running;
-  opacity: 1;
+.audio-visualizer.active .viz-bar {
+  background: var(--primary);
 }
 
-.waveform-bar:nth-child(2) { animation-delay: 0.1s; }
-.waveform-bar:nth-child(3) { animation-delay: 0.2s; }
-.waveform-bar:nth-child(4) { animation-delay: 0.28s; }
-.waveform-bar:nth-child(5) { animation-delay: 0.36s; }
-.waveform-bar:nth-child(6) { animation-delay: 0.44s; }
-.waveform-bar:nth-child(7) { animation-delay: 0.52s; }
-.waveform-bar:nth-child(8) { animation-delay: 0.6s; }
+/* ── Mic selector dropdown ── */
 
-@keyframes wave {
-  0%, 100% { height: 8px; }
-  50% { height: 24px; }
+.mic-selector {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 6px 10px;
+  background: #f8fafc;
 }
 
-.mic-controls {
-  margin-top: 12px;
+html.dark .mic-selector {
+  border-color: var(--line-dark);
+  background: #020617;
 }
 
-.ptt-button {
-  width: 100%;
+.mic-selector-icon {
+  font-size: 16px;
+  color: var(--muted);
+}
+
+.mic-selector select {
+  flex: 1;
   border: 0;
-  border-radius: 12px;
-  background: var(--primary);
-  color: #fff;
-  font-size: 18px;
-  font-weight: 700;
-  padding: 18px 16px;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  outline: none;
   cursor: pointer;
 }
 
-.ptt-button.active {
-  background: #b91c1c;
-  box-shadow: 0 0 0 4px rgba(185, 28, 28, 0.2);
+html.dark .mic-selector select {
+  color: var(--text-dark);
 }
 
-.ptt-button:disabled {
+.mic-selector select:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ── Mic icon button with ripple waves ── */
+
+.mic-button-wrap {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.mic-icon-button {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+
+.mic-icon-button:hover:not(:disabled) {
+  box-shadow: 0 0 0 4px rgba(16, 163, 127, 0.2);
+}
+
+.mic-icon-button.active {
+  background: #b91c1c;
+  box-shadow: 0 0 0 4px rgba(185, 28, 28, 0.18);
+}
+
+.mic-icon-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.mic-btn-icon {
+  font-size: 32px;
+  z-index: 1;
+}
+
+/* Radiating ripples */
+.ripple {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(185, 28, 28, 0.45);
+  animation: ripple-out 1.8s ease-out infinite;
+  pointer-events: none;
+}
+
+.ripple.r2 {
+  animation-delay: 0.4s;
+}
+
+.ripple.r3 {
+  animation-delay: 0.8s;
+}
+
+@keyframes ripple-out {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+
+.mic-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  user-select: none;
+}
+
+html.dark .mic-label {
+  color: var(--muted-dark);
+}
+
+.mic-status-text {
+  text-align: center;
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+html.dark .mic-status-text {
+  color: var(--muted-dark);
 }
 
 .voice-form {

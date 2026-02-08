@@ -141,6 +141,12 @@ STAGEHAND_MODEL_NAME=anthropic/claude-sonnet-4-5
 # Payment Safety
 SAFE_PAYMENT_DOMAINS=pge.com,google.com
 
+# Demo Autofill (use fake/test credentials only)
+DEMO_GMAIL_EMAIL=
+DEMO_GMAIL_PASSWORD=
+DEMO_PGE_EMAIL=
+DEMO_PGE_PASSWORD=
+
 # Voice Profiles (optional risk-specific voices)
 CARTESIA_VOICE_ID=f786b574-daa5-4673-aa0c-cbe3e8534c02
 CARTESIA_VOICE_ID_CAUTION=...
@@ -160,6 +166,18 @@ CARTESIA_VOICE_ID_DANGER=...
 - Agent navigates, fills form, detects payment button
 - **Risk**: High Risk → requests confirmation
 - **Agent**: "Hey, I found a payment button. Want me to click it?"
+
+### Demo Sign-In Flows
+**Gmail demo**:
+- "Take me to gmail.com"
+- "Click Sign In"
+- "Fill credentials" (uses `DEMO_GMAIL_*` if no values were spoken)
+- "Open the first email"
+
+**PG&E demo**:
+- "Take me to pge.com"
+- "Click Sign In"
+- "Fill credentials" (uses spoken email/password first, then `DEMO_PGE_*` fallback)
 
 ### Scam Detection
 **User**: "Go to urgent-account-suspended.com"

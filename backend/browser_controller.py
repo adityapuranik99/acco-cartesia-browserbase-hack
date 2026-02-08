@@ -206,6 +206,95 @@ class BrowserController:
             "payee": str(payload.get("payee", "") or "").strip(),
         }
 
+    async def fill_login_credentials(self, email: str, password: str) -> ExecutionResult:
+        """Fill login credentials using Playwright over CDP for reliability."""
+        if not email or not password:
+            return ExecutionResult(success=False, message="Missing credentials.", current_url=self.current_url)
+        if self._mode != "stagehand" or not self.cdp_url:
+            return ExecutionResult(success=False, message="CDP is unavailable.", current_url=self.current_url)
+
+        try:
+            from playwright.async_api import async_playwright
+
+            async with async_playwright() as pw:
+                browser = await pw.chromium.connect_over_cdp(self.cdp_url)
+                context = browser.contexts[0] if browser.contexts else None
+                page = context.pages[0] if context and context.pages else None
+                if page is None:
+                    await browser.close()
+                    return ExecutionResult(success=False, message="No active page found.", current_url=self.current_url)
+
+                email_selectors = [
+                    "input[type='email']",
+                    "input[autocomplete='username']",
+                    "input[autocomplete='email']",
+                    "input[name*='email' i]",
+                    "input[id*='email' i]",
+                    "input[name*='user' i]",
+                    "input[id*='user' i]",
+                    "input[placeholder*='email' i]",
+                    "input[placeholder*='username' i]",
+                ]
+                password_selectors = [
+                    "input[type='password']",
+                    "input[name*='password' i]",
+                    "input[id*='password' i]",
+                    "input[autocomplete='current-password']",
+                    "input[autocomplete='new-password']",
+                    "input[placeholder*='password' i]",
+                ]
+
+                async def fill_first_match(selectors: list[str], value: str, max_candidates: int = 6) -> bool:
+                    for selector in selectors:
+                        locator = page.locator(selector)
+                        count = await locator.count()
+                        if count == 0:
+                            continue
+                        for idx in range(min(count, max_candidates)):
+                            candidate = locator.nth(idx)
+                            try:
+                                if not await candidate.is_visible(timeout=600):
+                                    continue
+                                await candidate.click(timeout=1000)
+                                await candidate.fill(value, timeout=2500)
+                                return True
+                            except Exception:
+                                continue
+                    return False
+
+                email_ok = await fill_first_match(email_selectors, email)
+                password_ok = await fill_first_match(password_selectors, password)
+
+                current_url = page.url or self.current_url
+                await browser.close()
+                self.current_url = current_url
+
+                if email_ok and password_ok:
+                    return ExecutionResult(
+                        success=True,
+                        message="Filled login email and password fields.",
+                        current_url=current_url,
+                    )
+                if email_ok and not password_ok:
+                    return ExecutionResult(
+                        success=False,
+                        message="Filled email, but could not find/fill password input.",
+                        current_url=current_url,
+                    )
+                if password_ok and not email_ok:
+                    return ExecutionResult(
+                        success=False,
+                        message="Filled password, but could not find/fill email input.",
+                        current_url=current_url,
+                    )
+                return ExecutionResult(
+                    success=False,
+                    message="Could not find email or password inputs.",
+                    current_url=current_url,
+                )
+        except Exception as exc:
+            return ExecutionResult(success=False, message=f"Credential fill failed: {exc}", current_url=self.current_url)
+
     def _extract_session_id(self, session: Any) -> str | None:
         sid = getattr(session, "id", None)
         if isinstance(sid, str) and sid:

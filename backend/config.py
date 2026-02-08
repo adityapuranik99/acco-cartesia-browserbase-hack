@@ -37,6 +37,10 @@ class Settings:
     cartesia_stt_model: str = os.getenv("CARTESIA_STT_MODEL", "ink-whisper")
     exa_api_key: str = os.getenv("EXA_API_KEY", "")
     enable_exa_verification: bool = os.getenv("ENABLE_EXA_VERIFICATION", "0").lower() in {"1", "true", "yes"}
+    demo_gmail_email: str = os.getenv("DEMO_GMAIL_EMAIL", "")
+    demo_gmail_password: str = os.getenv("DEMO_GMAIL_PASSWORD", "")
+    demo_pge_email: str = os.getenv("DEMO_PGE_EMAIL", "")
+    demo_pge_password: str = os.getenv("DEMO_PGE_PASSWORD", "")
 
 
 settings = Settings()

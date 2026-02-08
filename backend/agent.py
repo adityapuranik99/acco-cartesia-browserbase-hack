@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 from urllib.parse import urlparse
 
-from brain import Brain
+from brain import Brain, GMAIL_FIND_AND_OPEN_LINK_MARKER, PGE_CLICK_SIGN_IN_MARKER, PGE_FILL_CREDENTIALS_MARKER
 from browser_controller import BrowserController
 from domain_verifier import DomainVerifier
 from models import ActionPlan, AgentState, ExecutionResult, RiskLevel, ServerEvent, VoiceState
@@ -19,6 +19,7 @@ SUBMIT_KEYWORDS = {
     "complete payment",
     "finish payment",
 }
+PAYMENT_CONFIRMATION_PHRASE = "yes I have checked, please proceed"
 
 
 class AccessibilityCopilot:
@@ -39,6 +40,10 @@ class AccessibilityCopilot:
         safe_payment_domains: list[str] | None = None,
         exa_api_key: str = "",
         enable_exa_verification: bool = False,
+        demo_gmail_email: str = "",
+        demo_gmail_password: str = "",
+        demo_pge_email: str = "",
+        demo_pge_password: str = "",
     ) -> None:
         self.state = AgentState()
         self.pending_plan: ActionPlan | None = None
@@ -54,6 +59,10 @@ class AccessibilityCopilot:
             enable_fast_risk_model=enable_fast_risk_model,
             fast_risk_model_name=fast_risk_model_name,
             fast_risk_timeout_sec=fast_risk_timeout_sec,
+            demo_gmail_email=demo_gmail_email,
+            demo_gmail_password=demo_gmail_password,
+            demo_pge_email=demo_pge_email,
+            demo_pge_password=demo_pge_password,
         )
         self.browser = BrowserController(
             browserbase_api_key=browserbase_api_key,
@@ -178,7 +187,7 @@ class AccessibilityCopilot:
         if plan.requires_confirmation or is_submit_action:
             phrase, readback = await self._build_payment_confirmation()
             if not phrase:
-                phrase = plan.confirmation_phrase or "yes, proceed safely"
+                phrase = plan.confirmation_phrase or PAYMENT_CONFIRMATION_PHRASE
 
             self.pending_plan = plan.model_copy(update={"requires_confirmation": False, "confirmation_phrase": None})
             self.state.pending_confirmation = True
@@ -225,21 +234,134 @@ class AccessibilityCopilot:
                     if wait_tick == 1 or wait_tick % 2 == 0:
                         yield ServerEvent(type="agent_response", text="Still working on the page load.")
         elif plan.action_type == "act" and plan.instruction:
-            action_task = asyncio.create_task(self.browser.act(plan.instruction))
-            wait_tick = 0
-            while True:
-                try:
-                    result = await asyncio.wait_for(asyncio.shield(action_task), timeout=self.progress_ping_sec)
-                    break
-                except asyncio.TimeoutError:
-                    wait_tick += 1
-                    yield ServerEvent(
-                        type="status",
-                        text="Still carrying out the requested action.",
-                        metadata={"step": str(step_index), "wait_tick": str(wait_tick)},
+            if plan.instruction == GMAIL_FIND_AND_OPEN_LINK_MARKER:
+                yield ServerEvent(
+                    type="status",
+                    text="Analyzing email content for the relevant billing link.",
+                    metadata={"step": str(step_index)},
+                )
+                snapshot = await self.browser.capture_page_state()
+                if snapshot.current_url:
+                    self.state.last_url = snapshot.current_url
+                    yield ServerEvent(type="browser_update", url=snapshot.current_url)
+
+                link_info = await self.brain.infer_email_payment_link(snapshot)
+                link_url = (link_info.get("url") or "").strip()
+
+                if link_url:
+                    result = await self.browser.navigate(link_url)
+                    if result.success:
+                        result.message = "Opened the billing link from the email."
+                    else:
+                        result.message = f"I found a link but couldn't open it automatically: {link_url}. {result.message}"
+                else:
+                    open_email_result = await self.browser.act(
+                        "From the inbox list, open an email whose subject or sender mentions PG&E, bill, payment, due, or statement. "
+                        "If none is visible, open the topmost email row."
                     )
-                    if wait_tick == 1 or wait_tick % 2 == 0:
-                        yield ServerEvent(type="agent_response", text="Still working on that action.")
+                    if not open_email_result.success:
+                        result = open_email_result
+                    else:
+                        refreshed = await self.browser.capture_page_state()
+                        if refreshed.current_url:
+                            self.state.last_url = refreshed.current_url
+                            yield ServerEvent(type="browser_update", url=refreshed.current_url)
+                        followup_link = await self.brain.infer_email_payment_link(refreshed)
+                        followup_url = (followup_link.get("url") or "").strip()
+                        if followup_url:
+                            result = await self.browser.navigate(followup_url)
+                            if result.success:
+                                result.message = "Opened the billing link from the selected email."
+                            else:
+                                result.message = (
+                                    f"I found a link but couldn't open it automatically: {followup_url}. {result.message}"
+                                )
+                        else:
+                            result = ExecutionResult(
+                                success=False,
+                                message="I opened the email but could not detect a reliable billing link yet.",
+                                current_url=self.state.last_url,
+                            )
+            elif plan.instruction == PGE_CLICK_SIGN_IN_MARKER:
+                pge_attempts = [
+                    "Close or accept any cookie/privacy banner that blocks page interactions.",
+                    "Click the 'Sign In' button or link for account access.",
+                    "If not found, click 'Log In' for account access.",
+                    "If still not found, click the account/profile/menu icon in the header, then click 'Sign In'.",
+                ]
+                last_fail: ExecutionResult | None = None
+                result = ExecutionResult(success=False, message="Could not find the PG&E sign-in button.")
+                for idx, attempt in enumerate(pge_attempts):
+                    attempt_result = await self.browser.act(attempt)
+                    if idx == 0:
+                        # Banner handling is best-effort; continue regardless.
+                        continue
+                    if attempt_result.success:
+                        result = attempt_result
+                        result.message = "Clicked the PG&E sign-in action."
+                        break
+                    last_fail = attempt_result
+                if not result.success and last_fail is not None:
+                    result = last_fail
+            elif plan.instruction.startswith(f"{PGE_FILL_CREDENTIALS_MARKER}|"):
+                parts = plan.instruction.split("|", 2)
+                if len(parts) != 3:
+                    result = ExecutionResult(
+                        success=False,
+                        message="I could not parse the credentials payload for PG&E fill.",
+                        current_url=self.state.last_url,
+                    )
+                else:
+                    email_value, password_value = parts[1], parts[2]
+                    direct_fill_result = await self.browser.fill_login_credentials(email=email_value, password=password_value)
+                    if direct_fill_result.success:
+                        result = direct_fill_result
+                    else:
+                        result = direct_fill_result
+                    pre_steps = [
+                        "If sign-in fields are not visible, click the main 'Sign In' button first.",
+                        f"Fill in the email or username field with: {email_value}",
+                    ]
+                    if not result.success:
+                        for step in pre_steps:
+                            pre = await self.browser.act(step)
+                            if not pre.success:
+                                result = pre
+                                break
+                        else:
+                            password_attempts = [
+                                f"Fill in the 'Password' field with: {password_value}",
+                                f"Click the password input box and type: {password_value}",
+                                f"Fill in the input of type password with: {password_value}",
+                                f"Focus the password field, clear any existing value, then type exactly: {password_value}",
+                            ]
+                            result = ExecutionResult(
+                                success=False,
+                                message="I could not fill the password field reliably.",
+                                current_url=self.state.last_url,
+                            )
+                            for attempt in password_attempts:
+                                attempt_result = await self.browser.act(attempt)
+                                if attempt_result.success:
+                                    result = attempt_result
+                                    result.message = "Filled PG&E email and password fields."
+                                    break
+            else:
+                action_task = asyncio.create_task(self.browser.act(plan.instruction))
+                wait_tick = 0
+                while True:
+                    try:
+                        result = await asyncio.wait_for(asyncio.shield(action_task), timeout=self.progress_ping_sec)
+                        break
+                    except asyncio.TimeoutError:
+                        wait_tick += 1
+                        yield ServerEvent(
+                            type="status",
+                            text="Still carrying out the requested action.",
+                            metadata={"step": str(step_index), "wait_tick": str(wait_tick)},
+                        )
+                        if wait_tick == 1 or wait_tick % 2 == 0:
+                            yield ServerEvent(type="agent_response", text="Still working on that action.")
         elif plan.action_type == "extract" and plan.instruction:
             action_task = asyncio.create_task(self.browser.extract(plan.instruction))
             wait_tick = 0
@@ -377,7 +499,7 @@ class AccessibilityCopilot:
             return
 
         if assessment.requires_confirmation and not self.state.pending_confirmation:
-            phrase = assessment.confirmation_phrase or "yes, proceed safely"
+            phrase = assessment.confirmation_phrase or PAYMENT_CONFIRMATION_PHRASE
             self.state.pending_confirmation = True
             self.state.pending_confirmation_phrase = phrase
             yield self._voice_state("SAFETY_CHECK")
@@ -393,7 +515,7 @@ class AccessibilityCopilot:
 
         amount_readback = amount or "the displayed amount"
         payee_readback = payee or "the displayed payee"
-        phrase = f"yes, pay {amount_readback} to {payee_readback}"
+        phrase = PAYMENT_CONFIRMATION_PHRASE
         readback = f"I read the amount as {amount_readback} to {payee_readback}."
         return phrase, readback
 
