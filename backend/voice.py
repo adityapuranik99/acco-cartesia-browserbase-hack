@@ -8,22 +8,22 @@ from typing import Any
 RISK_PROFILES: dict[str, dict[str, Any]] = {
     "SAFE": {
         "speed": "normal",
-        "emotion": "neutral",
+        "emotion": ["positivity:high"],
         "speed_scalar": 1.0,
     },
     "CAUTION": {
-        "speed": "slow",
-        "emotion": "curious",
-        "speed_scalar": 0.9,
+        "speed": "normal",
+        "emotion": ["curiosity:high"],
+        "speed_scalar": 0.95,
     },
-    "HIGH_RISK": {
+    "High Risk": {
         "speed": "slow",
-        "emotion": "sadness:high",
-        "speed_scalar": 0.8,
+        "emotion": ["surprise:high", "sadness:low"],
+        "speed_scalar": 0.85,
     },
     "DANGER": {
-        "speed": "slow",
-        "emotion": "anger:high",
+        "speed": "slowest",
+        "emotion": ["anger:highest", "surprise:high"],
         "speed_scalar": 0.75,
     },
 }
@@ -103,7 +103,7 @@ class VoiceSynthesizer:
     def _voice_for_risk(self, risk_level: str) -> str:
         if risk_level == "DANGER" and self.voice_id_danger:
             return self.voice_id_danger
-        if risk_level == "HIGH_RISK" and self.voice_id_high_risk:
+        if risk_level == "High Risk" and self.voice_id_high_risk:
             return self.voice_id_high_risk
         if risk_level == "CAUTION" and self.voice_id_caution:
             return self.voice_id_caution

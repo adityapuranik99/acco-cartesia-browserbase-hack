@@ -2,22 +2,33 @@ from __future__ import annotations
 
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, model_validator
 
-RiskLevel = Literal["SAFE", "CAUTION", "HIGH_RISK", "DANGER"]
-EventType = Literal["agent_response", "risk_update", "browser_update", "status"]
+RiskLevel = Literal["SAFE", "CAUTION", "High Risk", "DANGER"]
+VoiceState = Literal["LISTENING", "ACK", "WORKING", "SAFETY_CHECK", "RESULT"]
+EventType = Literal["agent_response", "risk_update", "browser_update", "status", "voice_state"]
 ActionType = Literal["navigate", "act", "extract", "stop", "noop"]
 
 
 class ClientMessage(BaseModel):
-    type: Literal["user_speech"]
-    transcript: str = Field(min_length=1)
+    type: Literal["user_speech", "interrupt"]
+    transcript: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_transcript(self) -> "ClientMessage":
+        if self.type == "user_speech":
+            text = (self.transcript or "").strip()
+            if not text:
+                raise ValueError("transcript is required for user_speech messages")
+            self.transcript = text
+        return self
 
 
 class ServerEvent(BaseModel):
     type: EventType
     text: Optional[str] = None
     risk_level: Optional[RiskLevel] = None
+    voice_state: Optional[VoiceState] = None
     url: Optional[str] = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
