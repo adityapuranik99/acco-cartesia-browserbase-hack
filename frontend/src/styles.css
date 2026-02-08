@@ -550,6 +550,13 @@ html.dark .mic-status-text {
   margin-top: 12px;
 }
 
+.line-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 10px;
+}
+
 textarea {
   width: 100%;
   min-height: 148px;

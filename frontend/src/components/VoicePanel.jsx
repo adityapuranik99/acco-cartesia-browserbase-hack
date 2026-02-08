@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useLineVoice } from '../hooks/useLineVoice.js';
 
 const VOICE_STATE_LABELS = {
   LISTENING: 'Listening for request',
@@ -25,6 +26,8 @@ export default function VoicePanel({ connected, voiceState, voiceMode = 'ptt', o
   const animFrameRef = useRef(null);
   const barsRef = useRef(null);
   const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+  const lineAgentId = import.meta.env.VITE_CARTESIA_LINE_AGENT_ID || '';
+  const lineVoice = useLineVoice({ apiBase, agentId: lineAgentId });
 
   const pickRecorderMimeType = () => {
     if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
@@ -270,11 +273,32 @@ export default function VoicePanel({ connected, voiceState, voiceMode = 'ptt', o
       {isLineMode && (
         <>
           <p className="mic-status-text">
-            Cartesia Line mode is active. Voice audio is handled by the Line session; this panel shows state updates.
+            Cartesia Line mode is active. Connect below to stream microphone audio directly to your Line agent.
           </p>
+          <div className="line-controls">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={lineVoice.connect}
+              disabled={lineVoice.isConnected || !connected}
+            >
+              Connect Line Audio
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={lineVoice.disconnect}
+              disabled={!lineVoice.isConnected}
+            >
+              Disconnect
+            </button>
+          </div>
           <p className="mic-status-text">
-            Keep this dashboard open for risk badges, browser updates, and activity logs.
+            {lineVoice.status}
+            {lineVoice.isListening ? ' • listening' : ''}
+            {lineVoice.isSpeaking ? ' • speaking' : ''}
           </p>
+          {lineVoice.error && <p className="mic-status-text">Line error: {lineVoice.error}</p>}
         </>
       )}
 

@@ -251,6 +251,10 @@ curl -X POST http://localhost:8000/cartesia/access-token \
   -d '{"expires_in":600,"grant_agent":true}'
 ```
 
+In frontend `line` mode, use the Voice Control panel button `Connect Line Audio`.
+It requests a short-lived token from `/cartesia/access-token`, opens the Cartesia
+agent stream websocket, and begins microphone streaming.
+
 **Send** (client → server):
 ```json
 {"type": "transcript", "text": "go to google.com"}
