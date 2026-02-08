@@ -115,12 +115,26 @@ export default function VoicePanel({ connected, onSend }) {
   };
 
   return (
-    <section className="panel">
-      <header>
-        <h2>Voice Panel</h2>
-        <p className="muted">WebSocket: {connected ? 'Connected' : 'Disconnected'}</p>
-        <p className="muted">Mic: {micStatus}</p>
+    <section className="panel voice-panel">
+      <header className="card-title-row">
+        <h2 className="card-title">
+          <span className="material-icons-outlined">mic</span>
+          Voice Control
+        </h2>
+        <span className="card-kicker">Active</span>
       </header>
+      <p className="panel-meta">WebSocket: {connected ? 'Connected' : 'Disconnected'}</p>
+      <p className="panel-meta">Mic: {micStatus}</p>
+      <div className="waveform">
+        <span className="waveform-bar" />
+        <span className="waveform-bar" />
+        <span className="waveform-bar" />
+        <span className="waveform-bar" />
+        <span className="waveform-bar" />
+        <span className="waveform-bar" />
+        <span className="waveform-bar" />
+        <span className="waveform-bar" />
+      </div>
       <div className="mic-controls">
         <button
           type="button"
@@ -144,7 +158,7 @@ export default function VoicePanel({ connected, onSend }) {
           placeholder="Speak into mic or type transcript..."
           rows={3}
         />
-        <button type="submit">Send Transcript</button>
+        <button type="submit" className="secondary-button">Send Transcript</button>
       </form>
     </section>
   );

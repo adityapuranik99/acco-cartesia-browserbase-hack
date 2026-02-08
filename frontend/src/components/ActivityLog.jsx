@@ -1,16 +1,22 @@
 export default function ActivityLog({ events }) {
-  const recent = events.slice(-12).reverse();
+  const recent = events.slice(-18).reverse();
 
   return (
-    <section className="panel">
-      <header>
-        <h2>Activity Log</h2>
+    <section className="panel activity-panel">
+      <header className="card-title-row">
+        <h2 className="card-title">
+          <span className="material-icons-outlined">history</span>
+          Activity Log
+        </h2>
       </header>
       <ul className="log-list">
         {recent.map((event, index) => (
           <li key={`${event.type}-${index}`}>
-            <strong>{event.type}</strong>
-            <span>{event.text || event.url || event.risk_level || ''}</span>
+            <span className="timeline-dot" />
+            <div>
+              <strong>{event.type}</strong>
+              <span>{event.text || event.url || event.risk_level || ''}</span>
+            </div>
           </li>
         ))}
       </ul>

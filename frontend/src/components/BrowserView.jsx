@@ -1,10 +1,18 @@
 export default function BrowserView({ currentUrl, liveViewUrl }) {
   return (
-    <section className="panel browser-panel">
-      <header>
-        <h2>Browser View</h2>
-        <p className="muted">Browserbase Live View</p>
-      </header>
+    <section className="panel browser-shell">
+      <div className="browser-header">
+        <div className="browser-dots">
+          <span />
+          <span />
+          <span />
+        </div>
+        <div className="browser-address">
+          <span className="material-icons-outlined">lock</span>
+          <span className="truncate">{currentUrl || 'about:blank'}</span>
+          <span className="material-icons-outlined">refresh</span>
+        </div>
+      </div>
       <div className="browser-frame">
         {liveViewUrl ? (
           <iframe
@@ -14,10 +22,17 @@ export default function BrowserView({ currentUrl, liveViewUrl }) {
             allow="clipboard-read; clipboard-write"
           />
         ) : (
-          <>
-            <p>Live view not ready yet. Current URL:</p>
-            <code>{currentUrl || 'about:blank'}</code>
-          </>
+          <div className="browser-placeholder">
+            <div className="placeholder-icon">
+              <span className="material-icons-outlined">language</span>
+            </div>
+            <h3>Browserbase Live View</h3>
+            <p>
+              Initializing secure browser session. Current URL:
+              {' '}
+              <code>{currentUrl || 'about:blank'}</code>
+            </p>
+          </div>
         )}
       </div>
     </section>

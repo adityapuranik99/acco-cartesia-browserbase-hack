@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import ActivityLog from './components/ActivityLog.jsx';
 import BrowserView from './components/BrowserView.jsx';
 import RiskBadge from './components/RiskBadge.jsx';
@@ -18,20 +19,60 @@ function getLiveViewUrl(events) {
 
 export default function App() {
   const { connected, riskLevel, events, sendTranscript } = useWebSocket();
+  const [darkMode, setDarkMode] = useState(false);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', darkMode);
+  }, [darkMode]);
 
   return (
-    <main className="layout">
-      <h1>Accessibility Co-Pilot</h1>
-      <p className="subtitle">Phase 0 scaffold: transcript in, safety-aware agent events out.</p>
-
-      <div className="grid">
-        <BrowserView currentUrl={getLatestUrl(events)} liveViewUrl={getLiveViewUrl(events)} />
-        <div className="side-column">
-          <VoicePanel connected={connected} onSend={sendTranscript} />
-          <RiskBadge riskLevel={riskLevel} />
-          <ActivityLog events={events} />
+    <div className="dashboard">
+      <header className="topbar">
+        <div className="topbar-inner">
+          <div className="brand">
+            <div className="brand-icon">
+              <span className="material-icons-outlined">assist_walker</span>
+            </div>
+            <div>
+              <h1 className="brand-title">Accessibility Co-Pilot</h1>
+              <p className="brand-subtitle">Phase 1 Intelligence • Safety Aware</p>
+            </div>
+          </div>
+          <div className="topbar-actions">
+            <div className="live-pill">
+              <span className="live-dot" />
+              <span>System Live</span>
+            </div>
+            <button className="icon-button" onClick={() => setDarkMode((prev) => !prev)} type="button">
+              <span className="material-icons-outlined">{darkMode ? 'light_mode' : 'dark_mode'}</span>
+            </button>
+          </div>
         </div>
-      </div>
-    </main>
+      </header>
+
+      <main className="content-grid">
+        <section className="main-browser">
+          <BrowserView currentUrl={getLatestUrl(events)} liveViewUrl={getLiveViewUrl(events)} />
+        </section>
+        <aside className="side-stack">
+          <VoicePanel connected={connected} onSend={sendTranscript} />
+          <RiskBadge riskLevel={riskLevel} connected={connected} />
+          <ActivityLog events={events} />
+        </aside>
+      </main>
+
+      <footer className="footer-bar">
+        <div className="footer-inner">
+          <div className="footer-group">
+            <span className="footer-chip">API: Live</span>
+            <span className="footer-chip">Planner: Claude</span>
+            <span className="footer-chip">Browser: Browserbase + Stagehand</span>
+          </div>
+          <div className="footer-group">
+            <span>v1.0.0</span>
+          </div>
+        </div>
+      </footer>
+    </div>
   );
 }
