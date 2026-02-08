@@ -27,8 +27,13 @@ class Settings:
     enable_cartesia_tts: bool = os.getenv("ENABLE_CARTESIA_TTS", "0").lower() in {"1", "true", "yes"}
     cartesia_model_id: str = os.getenv("CARTESIA_MODEL_ID", "sonic-3")
     cartesia_voice_id: str = os.getenv("CARTESIA_VOICE_ID", "f786b574-daa5-4673-aa0c-cbe3e8534c02")
+    cartesia_voice_id_caution: str = os.getenv("CARTESIA_VOICE_ID_CAUTION", "")
+    cartesia_voice_id_high_risk: str = os.getenv("CARTESIA_VOICE_ID_HIGH_RISK", "")
+    cartesia_voice_id_danger: str = os.getenv("CARTESIA_VOICE_ID_DANGER", "")
     enable_cartesia_stt: bool = os.getenv("ENABLE_CARTESIA_STT", "0").lower() in {"1", "true", "yes"}
     cartesia_stt_model: str = os.getenv("CARTESIA_STT_MODEL", "ink-whisper")
+    exa_api_key: str = os.getenv("EXA_API_KEY", "")
+    enable_exa_verification: bool = os.getenv("ENABLE_EXA_VERIFICATION", "0").lower() in {"1", "true", "yes"}
 
 
 settings = Settings()

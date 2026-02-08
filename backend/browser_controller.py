@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from typing import Any
 
-from models import ExecutionResult
+from models import ExecutionResult, PageSnapshot
 
 
 class BrowserController:
@@ -28,6 +29,7 @@ class BrowserController:
         self.current_url = "about:blank"
         self.session_id: str | None = None
         self.live_view_url: str | None = None
+        self.cdp_url: str | None = None
         self._mode = "stub"
         self._stagehand = None
         self._session = None
@@ -74,6 +76,7 @@ class BrowserController:
             self._mode = "stagehand" if self._session is not None else "stub"
             if self._mode == "stagehand":
                 self.session_id = self._extract_session_id(self._session)
+                self.cdp_url = self._extract_cdp_url(self._session)
                 await self._populate_live_view_url()
         except Exception:
             self._mode = "stub"
@@ -158,6 +161,51 @@ class BrowserController:
             )
         return None
 
+    async def capture_page_state(self) -> PageSnapshot:
+        snapshot = PageSnapshot(current_url=self.current_url)
+        if self._mode != "stagehand" or self._session is None:
+            return snapshot
+
+        structured = await self._extract_structured_page_signals()
+        if structured:
+            snapshot.title = structured.get("title")
+            snapshot.visible_text_excerpt = structured.get("visible_text_excerpt")
+            snapshot.form_fields = structured.get("form_fields") or []
+            snapshot.payment_amount = structured.get("payment_amount")
+            snapshot.payee_entity = structured.get("payee_entity")
+            snapshot.urgency_signals = structured.get("urgency_signals") or []
+
+        cdp_state = await self._capture_via_cdp()
+        if cdp_state:
+            snapshot.current_url = cdp_state.get("current_url") or self.current_url
+            snapshot.title = cdp_state.get("title") or snapshot.title
+            snapshot.dom_excerpt = cdp_state.get("dom_excerpt") or snapshot.dom_excerpt
+            snapshot.screenshot_b64 = cdp_state.get("screenshot_b64")
+
+        return snapshot
+
+    async def extract_payment_details(self) -> dict[str, str]:
+        if self._mode != "stagehand" or self._session is None:
+            return {"amount": "", "payee": ""}
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "amount": {"type": "string"},
+                "payee": {"type": "string"},
+            },
+            "required": ["amount", "payee"],
+        }
+        payload = await self._extract_with_schema(
+            "Extract the payment amount and payee name shown on this page. "
+            "If unavailable, return empty strings.",
+            schema,
+        )
+        return {
+            "amount": str(payload.get("amount", "") or "").strip(),
+            "payee": str(payload.get("payee", "") or "").strip(),
+        }
+
     def _extract_session_id(self, session: Any) -> str | None:
         sid = getattr(session, "id", None)
         if isinstance(sid, str) and sid:
@@ -172,6 +220,21 @@ class BrowserController:
                     payload = data.get("data") or {}
                     if isinstance(payload, dict):
                         for key in ("session_id", "sessionId"):
+                            value = payload.get(key)
+                            if isinstance(value, str) and value:
+                                return value
+            except Exception:
+                return None
+        return None
+
+    def _extract_cdp_url(self, session: Any) -> str | None:
+        if hasattr(session, "model_dump"):
+            try:
+                data = session.model_dump()
+                if isinstance(data, dict):
+                    payload = data.get("data") or {}
+                    if isinstance(payload, dict):
+                        for key in ("cdp_url", "cdpUrl"):
                             value = payload.get(key)
                             if isinstance(value, str) and value:
                                 return value
@@ -198,6 +261,73 @@ class BrowserController:
                     self.live_view_url = live_url
         except Exception:
             self.live_view_url = None
+
+    async def _extract_structured_page_signals(self) -> dict[str, Any]:
+        schema = {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "visible_text_excerpt": {"type": "string"},
+                "form_fields": {"type": "array", "items": {"type": "string"}},
+                "payment_amount": {"type": "string"},
+                "payee_entity": {"type": "string"},
+                "urgency_signals": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": [
+                "title",
+                "visible_text_excerpt",
+                "form_fields",
+                "payment_amount",
+                "payee_entity",
+                "urgency_signals",
+            ],
+        }
+        return await self._extract_with_schema(
+            "Extract page safety context: page title, visible text excerpt (max 400 chars), "
+            "form field labels, payment amount if visible, payee/service name, "
+            "and urgency signals like 'act now', countdown, suspension warnings.",
+            schema,
+        )
+
+    async def _extract_with_schema(self, instruction: str, schema: dict[str, Any]) -> dict[str, Any]:
+        if self._mode != "stagehand" or self._session is None:
+            return {}
+        try:
+            response = await self._session.extract(instruction=instruction, schema=schema)
+            data = response.model_dump() if hasattr(response, "model_dump") else {}
+            result = (data.get("data") or {}).get("result") if isinstance(data, dict) else None
+            return result if isinstance(result, dict) else {}
+        except Exception:
+            return {}
+
+    async def _capture_via_cdp(self) -> dict[str, str] | None:
+        if not self.cdp_url:
+            return None
+        try:
+            from playwright.async_api import async_playwright
+
+            async with async_playwright() as pw:
+                browser = await pw.chromium.connect_over_cdp(self.cdp_url)
+                context = browser.contexts[0] if browser.contexts else None
+                page = context.pages[0] if context and context.pages else None
+                if page is None:
+                    await browser.close()
+                    return None
+
+                current_url = page.url or self.current_url
+                title = await page.title()
+                html = await page.content()
+                screenshot_bytes = await page.screenshot(type="png", full_page=False)
+                await browser.close()
+
+                return {
+                    "current_url": current_url,
+                    "title": title,
+                    "dom_excerpt": html[:12000],
+                    "screenshot_b64": base64.b64encode(screenshot_bytes).decode("ascii"),
+                }
+        except Exception:
+            return None
 
     async def _call_session(self, fn: Any, attempts: list[dict[str, Any]], return_last: bool = False) -> Any:
         last_exc: Exception | None = None

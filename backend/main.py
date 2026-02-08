@@ -56,6 +56,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         enabled=settings.enable_cartesia_tts,
         model_id=settings.cartesia_model_id,
         voice_id=settings.cartesia_voice_id,
+        voice_id_caution=settings.cartesia_voice_id_caution,
+        voice_id_high_risk=settings.cartesia_voice_id_high_risk,
+        voice_id_danger=settings.cartesia_voice_id_danger,
     )
 
     copilot = AccessibilityCopilot(
@@ -68,6 +71,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         enable_stagehand=settings.enable_stagehand,
         claude_timeout_sec=settings.claude_timeout_sec,
         enable_claude=settings.enable_claude,
+        exa_api_key=settings.exa_api_key,
+        enable_exa_verification=settings.enable_exa_verification,
         safe_payment_domains=[
             d.strip().lower() for d in settings.safe_payment_domains.split(",") if d.strip()
         ],
@@ -79,16 +84,20 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     )
 
     try:
+        current_risk_level = "SAFE"
         while True:
             payload = await websocket.receive_json()
             msg = ClientMessage.model_validate(payload)
 
             async for event in copilot.handle_transcript(msg.transcript):
+                if event.type == "risk_update" and event.risk_level:
+                    current_risk_level = event.risk_level
                 if event.type == "agent_response":
-                    audio_b64 = await voice.synthesize_base64(event.text or "")
+                    audio_b64 = await voice.synthesize_base64(event.text or "", risk_level=current_risk_level)
                     if audio_b64:
                         event.metadata["audio_b64"] = audio_b64
                         event.metadata["audio_mime"] = "audio/wav"
+                        event.metadata["voice_risk_profile"] = current_risk_level
                 await websocket.send_text(event.model_dump_json())
     except WebSocketDisconnect:
         return
