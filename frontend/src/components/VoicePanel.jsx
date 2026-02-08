@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 
-export default function VoicePanel({ connected, onSend }) {
+const VOICE_STATE_LABELS = {
+  LISTENING: 'Listening for request',
+  ACK: 'Acknowledged',
+  WORKING: 'Working',
+  SAFETY_CHECK: 'Safety check',
+  RESULT: 'Result ready',
+};
+
+export default function VoicePanel({ connected, voiceState, onSend, onInterrupt }) {
   const [input, setInput] = useState('Go to google.com');
   const [isListening, setIsListening] = useState(false);
   const [micSupported, setMicSupported] = useState(false);
@@ -35,12 +43,14 @@ export default function VoicePanel({ connected, onSend }) {
   const submit = (e) => {
     e.preventDefault();
     if (!input.trim()) return;
+    onInterrupt?.();
     onSend(input.trim());
     setInput('');
   };
 
   const startMic = async () => {
     if (!connected || isListening) return;
+    onInterrupt?.();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -114,6 +124,14 @@ export default function VoicePanel({ connected, onSend }) {
     }
   };
 
+  const toggleMic = () => {
+    if (isListening) {
+      stopMic();
+      return;
+    }
+    startMic();
+  };
+
   return (
     <section className="panel voice-panel">
       <header className="card-title-row">
@@ -124,8 +142,9 @@ export default function VoicePanel({ connected, onSend }) {
         <span className="card-kicker">Active</span>
       </header>
       <p className="panel-meta">WebSocket: {connected ? 'Connected' : 'Disconnected'}</p>
+      <p className="panel-meta">Assistant: {VOICE_STATE_LABELS[voiceState] || voiceState}</p>
       <p className="panel-meta">Mic: {micStatus}</p>
-      <div className="waveform">
+      <div className={`waveform ${isListening ? 'active' : ''}`}>
         <span className="waveform-bar" />
         <span className="waveform-bar" />
         <span className="waveform-bar" />
@@ -140,15 +159,9 @@ export default function VoicePanel({ connected, onSend }) {
           type="button"
           className={`ptt-button ${isListening ? 'active' : ''}`}
           disabled={!micSupported || !connected}
-          onMouseDown={startMic}
-          onMouseUp={stopMic}
-          onMouseLeave={() => {
-            if (isListening) stopMic();
-          }}
-          onTouchStart={startMic}
-          onTouchEnd={stopMic}
+          onClick={toggleMic}
         >
-          {isListening ? 'Release to Send' : 'Hold to Talk'}
+          {isListening ? 'Stop Listening' : 'Start Listening'}
         </button>
       </div>
       <form onSubmit={submit} className="voice-form">

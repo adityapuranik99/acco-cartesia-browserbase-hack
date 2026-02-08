@@ -18,7 +18,7 @@ function getLiveViewUrl(events) {
 }
 
 export default function App() {
-  const { connected, riskLevel, events, sendTranscript } = useWebSocket();
+  const { connected, riskLevel, voiceState, events, sendTranscript, sendInterrupt } = useWebSocket();
   const [darkMode, setDarkMode] = useState(false);
 
   useEffect(() => {
@@ -55,7 +55,7 @@ export default function App() {
           <BrowserView currentUrl={getLatestUrl(events)} liveViewUrl={getLiveViewUrl(events)} />
         </section>
         <aside className="side-stack">
-          <VoicePanel connected={connected} onSend={sendTranscript} />
+          <VoicePanel connected={connected} voiceState={voiceState} onSend={sendTranscript} onInterrupt={sendInterrupt} />
           <RiskBadge riskLevel={riskLevel} connected={connected} />
           <ActivityLog events={events} />
         </aside>

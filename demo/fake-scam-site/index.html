@@ -3,26 +3,104 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PG&E Urgent Billing</title>
+    <title>BayGrid Utilities Account Center</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <main class="card">
-      <h1>Urgent Notice: Service Termination in 24 Hours</h1>
-      <p class="alert">Immediate payment required to avoid disconnection.</p>
-      <p>Amount due: <strong>$142.50</strong></p>
-      <form>
-        <label>
-          Card Number
-          <input type="text" placeholder="4111 1111 1111 1111" />
-        </label>
-        <label>
-          Expiration
-          <input type="text" placeholder="MM/YY" />
-        </label>
-        <button type="button">Pay Now</button>
-      </form>
-      <small>This page is intentionally fake for demo purposes.</small>
+    <header class="top-nav">
+      <div class="brand-wrap">
+        <div class="brand-mark" aria-hidden="true">P</div>
+        <div>
+          <p class="brand-kicker">BayGrid Utilities</p>
+          <h1 class="brand-title">Account Center</h1>
+        </div>
+      </div>
+      <div class="nav-links">
+        <a href="#">Bills</a>
+        <a href="#">Outages</a>
+        <a href="#">Support</a>
+        <a href="#">Sign Out</a>
+      </div>
+    </header>
+
+    <section class="urgent-strip" role="alert">
+      <strong>Final Notice:</strong> Service interruption is scheduled for <span>today at 6:00 PM</span>.
+      Pay now to avoid disconnection and a restoration fee.
+    </section>
+
+    <main class="page-grid">
+      <section class="panel account-panel">
+        <h2>Account Overview</h2>
+        <div class="kv-grid">
+          <div>
+            <p class="label">Account Holder</p>
+            <p class="value">A. Thompson</p>
+          </div>
+          <div>
+            <p class="label">Account Number</p>
+            <p class="value">**** **** 2894</p>
+          </div>
+          <div>
+            <p class="label">Service Address</p>
+            <p class="value">2210 Elm Street, Oakland, CA</p>
+          </div>
+          <div>
+            <p class="label">Current Balance</p>
+            <p class="value danger">$142.50 past due</p>
+          </div>
+        </div>
+
+        <div class="warning-box">
+          <p class="warning-title">Your account is in collections review</p>
+          <p>
+            A delayed payment may lead to immediate service disruption and an additional
+            <strong>$85 reconnection charge</strong>.
+          </p>
+        </div>
+
+        <div class="countdown">
+          <p class="countdown-label">Time Remaining</p>
+          <p class="countdown-value" id="countdown-value" data-start-seconds="8079">02:14:39</p>
+        </div>
+      </section>
+
+      <section class="panel payment-panel">
+        <h2>Resolve Balance</h2>
+        <p class="sub">Use your card to clear the past due amount instantly.</p>
+
+        <form>
+          <label>
+            Card Number
+            <input type="text" placeholder="4111 1111 1111 1111" />
+          </label>
+          <div class="row-2">
+            <label>
+              Expiration
+              <input type="text" placeholder="MM/YY" />
+            </label>
+            <label>
+              CVV
+              <input type="text" placeholder="123" />
+            </label>
+          </div>
+          <label>
+            ZIP Code
+            <input type="text" placeholder="94612" />
+          </label>
+          <button type="button">Pay $142.50 Now</button>
+        </form>
+
+        <div class="support-card">
+          <p class="support-title">Priority Help Line</p>
+          <p>Need immediate restoration? Call now: <strong>(888) 921-0441</strong></p>
+          <a href="#">Start Live Agent Chat</a>
+        </div>
+      </section>
     </main>
+
+    <footer class="footnote">
+      This page is intentionally fake for accessibility and scam-detection demos.
+    </footer>
+    <script src="script.js"></script>
   </body>
 </html>

@@ -394,6 +394,13 @@ html.dark .waveform {
   background: var(--primary);
   height: 10px;
   animation: wave 1.15s ease-in-out infinite;
+  animation-play-state: paused;
+  opacity: 0.45;
+}
+
+.waveform.active .waveform-bar {
+  animation-play-state: running;
+  opacity: 1;
 }
 
 .waveform-bar:nth-child(2) { animation-delay: 0.1s; }
@@ -427,6 +434,7 @@ html.dark .waveform {
 
 .ptt-button.active {
   background: #b91c1c;
+  box-shadow: 0 0 0 4px rgba(185, 28, 28, 0.2);
 }
 
 .ptt-button:disabled {

@@ -1,5 +1,11 @@
 export default function ActivityLog({ events }) {
   const recent = events.slice(-18).reverse();
+  const formatEventText = (event) => {
+    if (event.type === 'voice_state') {
+      return event.text || event.voice_state || '';
+    }
+    return event.text || event.url || event.risk_level || '';
+  };
 
   return (
     <section className="panel activity-panel">
@@ -14,8 +20,8 @@ export default function ActivityLog({ events }) {
           <li key={`${event.type}-${index}`}>
             <span className="timeline-dot" />
             <div>
-              <strong>{event.type}</strong>
-              <span>{event.text || event.url || event.risk_level || ''}</span>
+              <strong>{event.type === 'voice_state' ? `voice_state:${event.voice_state || ''}` : event.type}</strong>
+              <span>{formatEventText(event)}</span>
             </div>
           </li>
         ))}
