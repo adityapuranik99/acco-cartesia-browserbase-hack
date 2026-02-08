@@ -1,4 +1,6 @@
 import json
+from contextlib import suppress
+import asyncio
 
 import uvicorn
 from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
@@ -71,6 +73,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         enable_stagehand=settings.enable_stagehand,
         claude_timeout_sec=settings.claude_timeout_sec,
         enable_claude=settings.enable_claude,
+        enable_fast_risk_model=settings.enable_fast_risk_model,
+        fast_risk_model_name=settings.fast_risk_model_name,
+        fast_risk_timeout_sec=settings.fast_risk_timeout_sec,
         exa_api_key=settings.exa_api_key,
         enable_exa_verification=settings.enable_exa_verification,
         safe_payment_domains=[
@@ -85,23 +90,47 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
     try:
         current_risk_level = "SAFE"
-        while True:
-            payload = await websocket.receive_json()
-            msg = ClientMessage.model_validate(payload)
+        current_task: asyncio.Task[None] | None = None
 
-            async for event in copilot.handle_transcript(msg.transcript):
+        async def process_transcript(transcript: str) -> None:
+            nonlocal current_risk_level
+            async for event in copilot.handle_transcript(transcript):
                 if event.type == "risk_update" and event.risk_level:
                     current_risk_level = event.risk_level
-                if event.type == "agent_response":
+                if event.type == "agent_response" and event.text:
                     audio_b64 = await voice.synthesize_base64(event.text or "", risk_level=current_risk_level)
                     if audio_b64:
                         event.metadata["audio_b64"] = audio_b64
                         event.metadata["audio_mime"] = "audio/wav"
                         event.metadata["voice_risk_profile"] = current_risk_level
                 await websocket.send_text(event.model_dump_json())
+
+        while True:
+            payload = await websocket.receive_json()
+            msg = ClientMessage.model_validate(payload)
+            if msg.type == "interrupt":
+                if current_task and not current_task.done():
+                    current_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await current_task
+                await websocket.send_text(
+                    json.dumps({"type": "status", "text": "Interrupted current action by user request."})
+                )
+                continue
+
+            if current_task and not current_task.done():
+                current_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await current_task
+
+            current_task = asyncio.create_task(process_transcript(msg.transcript or ""))
     except WebSocketDisconnect:
         return
     finally:
+        if "current_task" in locals() and current_task and not current_task.done():
+            current_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await current_task
         await copilot.shutdown()
 
 

@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from brain import Brain
 from browser_controller import BrowserController
 from domain_verifier import DomainVerifier
-from models import ActionPlan, AgentState, ExecutionResult, RiskLevel, ServerEvent
+from models import ActionPlan, AgentState, ExecutionResult, RiskLevel, ServerEvent, VoiceState
 
 
 SUBMIT_KEYWORDS = {
@@ -33,6 +33,9 @@ class AccessibilityCopilot:
         enable_stagehand: bool = False,
         claude_timeout_sec: float = 10.0,
         enable_claude: bool = False,
+        enable_fast_risk_model: bool = True,
+        fast_risk_model_name: str = "claude-3-5-haiku-20241022",
+        fast_risk_timeout_sec: float = 2.2,
         safe_payment_domains: list[str] | None = None,
         exa_api_key: str = "",
         enable_exa_verification: bool = False,
@@ -41,12 +44,16 @@ class AccessibilityCopilot:
         self.pending_plan: ActionPlan | None = None
         self.safe_payment_domains = set((safe_payment_domains or []))
         self.max_steps_per_turn = 4
+        self.progress_ping_sec = 2.5
         self.domain_verifier = DomainVerifier(api_key=exa_api_key, enabled=enable_exa_verification)
 
         self.brain = Brain(
             anthropic_api_key=anthropic_api_key,
             timeout_sec=claude_timeout_sec,
             enabled=enable_claude,
+            enable_fast_risk_model=enable_fast_risk_model,
+            fast_risk_model_name=fast_risk_model_name,
+            fast_risk_timeout_sec=fast_risk_timeout_sec,
         )
         self.browser = BrowserController(
             browserbase_api_key=browserbase_api_key,
@@ -72,28 +79,35 @@ class AccessibilityCopilot:
         return info
 
     async def handle_transcript(self, transcript: str) -> AsyncIterator[ServerEvent]:
+        yield self._voice_state("LISTENING", "I heard you.")
         normalized = transcript.strip().lower()
 
         if self.state.pending_confirmation:
-            expected = (self.state.pending_confirmation_phrase or "").lower()
-            if normalized == expected:
+            # Simple yes/no check
+            if any(word in normalized for word in ["no", "stop", "cancel", "don't", "dont"]):
                 self.state.pending_confirmation = False
                 self.state.pending_confirmation_phrase = None
-                yield ServerEvent(type="agent_response", text="Confirmation received. Continuing safely.")
+                self.pending_plan = None
+                yield ServerEvent(type="agent_response", text="Okay, stopped. What else can I help with?")
+                yield ServerEvent(type="risk_update", risk_level="SAFE")
+                return
+
+            if any(word in normalized for word in ["yes", "okay", "ok", "proceed", "continue", "go ahead"]):
+                self.state.pending_confirmation = False
+                self.state.pending_confirmation_phrase = None
+                yield ServerEvent(type="agent_response", text="Got it! Continuing...")
                 if self.pending_plan is not None:
                     pending = self.pending_plan
                     self.pending_plan = None
                     async for event in self._execute_plan(pending, self.state.current_goal or transcript, step_index=0):
                         yield event
-                else:
-                    yield ServerEvent(type="risk_update", risk_level="SAFE")
-            else:
-                yield ServerEvent(
-                    type="agent_response",
-                    text=f"Please say exactly: '{self.state.pending_confirmation_phrase}'.",
-                )
+                return
+
+            # Didn't understand
+            yield ServerEvent(type="agent_response", text="Sorry, I didn't catch that. Say 'yes' or 'no'.")
             return
 
+        yield self._voice_state("ACK", "Understood. Starting now.")
         self.state.current_goal = transcript
         self.state.action_history = []
 
@@ -104,10 +118,12 @@ class AccessibilityCopilot:
 
             if plan.action_type == "noop":
                 if step == 1:
+                    yield self._voice_state("RESULT")
                     yield ServerEvent(type="agent_response", text="How would you like me to proceed?")
                 return
 
             if signature and signature in self.state.action_history[-2:]:
+                yield self._voice_state("RESULT")
                 yield ServerEvent(
                     type="agent_response",
                     text="I appear to be repeating steps. Please clarify the next action.",
@@ -116,8 +132,9 @@ class AccessibilityCopilot:
 
             gated = await self._enforce_safety_gate(plan, self.state.current_goal)
             if gated is not None:
-                if self.state.last_risk_level in {"HIGH_RISK", "DANGER"}:
+                if self.state.last_risk_level in {"High Risk", "DANGER"}:
                     yield ServerEvent(type="risk_update", risk_level=self.state.last_risk_level)
+                yield self._voice_state("SAFETY_CHECK")
                 yield gated
                 return
 
@@ -132,6 +149,7 @@ class AccessibilityCopilot:
             if plan.action_type in {"stop", "extract"}:
                 return
             if self.state.last_risk_level == "DANGER":
+                yield self._voice_state("RESULT")
                 yield ServerEvent(
                     type="agent_response",
                     text="I am stopping here because the current page appears dangerous.",
@@ -157,7 +175,7 @@ class AccessibilityCopilot:
         instruction = (plan.instruction or "").lower()
         is_submit_action = plan.action_type == "act" and any(token in instruction for token in SUBMIT_KEYWORDS)
 
-        if plan.requires_confirmation or is_submit_action or (payment_intent and plan.action_type in {"navigate", "act", "extract"}):
+        if plan.requires_confirmation or is_submit_action:
             phrase, readback = await self._build_payment_confirmation()
             if not phrase:
                 phrase = plan.confirmation_phrase or "yes, proceed safely"
@@ -165,7 +183,7 @@ class AccessibilityCopilot:
             self.pending_plan = plan.model_copy(update={"requires_confirmation": False, "confirmation_phrase": None})
             self.state.pending_confirmation = True
             self.state.pending_confirmation_phrase = phrase
-            self.state.last_risk_level = "HIGH_RISK"
+            self.state.last_risk_level = "High Risk"
 
             prefix = "Safety check required before this high-risk step."
             if readback:
@@ -179,6 +197,7 @@ class AccessibilityCopilot:
         return None
 
     async def _execute_plan(self, plan: ActionPlan, transcript: str, step_index: int) -> AsyncIterator[ServerEvent]:
+        yield self._voice_state("WORKING")
         status_meta = self.runtime_info()
         status_meta["step"] = str(step_index)
         yield ServerEvent(
@@ -190,15 +209,59 @@ class AccessibilityCopilot:
 
         result = ExecutionResult(success=True, message="No operation.", current_url=self.state.last_url)
         if plan.action_type == "navigate" and plan.url is not None:
-            result = await self.browser.navigate(str(plan.url))
+            action_task = asyncio.create_task(self.browser.navigate(str(plan.url)))
+            wait_tick = 0
+            while True:
+                try:
+                    result = await asyncio.wait_for(asyncio.shield(action_task), timeout=self.progress_ping_sec)
+                    break
+                except asyncio.TimeoutError:
+                    wait_tick += 1
+                    yield ServerEvent(
+                        type="status",
+                        text="Still loading the page.",
+                        metadata={"step": str(step_index), "wait_tick": str(wait_tick)},
+                    )
+                    if wait_tick == 1 or wait_tick % 2 == 0:
+                        yield ServerEvent(type="agent_response", text="Still working on the page load.")
         elif plan.action_type == "act" and plan.instruction:
-            result = await self.browser.act(plan.instruction)
+            action_task = asyncio.create_task(self.browser.act(plan.instruction))
+            wait_tick = 0
+            while True:
+                try:
+                    result = await asyncio.wait_for(asyncio.shield(action_task), timeout=self.progress_ping_sec)
+                    break
+                except asyncio.TimeoutError:
+                    wait_tick += 1
+                    yield ServerEvent(
+                        type="status",
+                        text="Still carrying out the requested action.",
+                        metadata={"step": str(step_index), "wait_tick": str(wait_tick)},
+                    )
+                    if wait_tick == 1 or wait_tick % 2 == 0:
+                        yield ServerEvent(type="agent_response", text="Still working on that action.")
         elif plan.action_type == "extract" and plan.instruction:
-            result = await self.browser.extract(plan.instruction)
+            action_task = asyncio.create_task(self.browser.extract(plan.instruction))
+            wait_tick = 0
+            while True:
+                try:
+                    result = await asyncio.wait_for(asyncio.shield(action_task), timeout=self.progress_ping_sec)
+                    break
+                except asyncio.TimeoutError:
+                    wait_tick += 1
+                    yield ServerEvent(
+                        type="status",
+                        text="Still extracting page information.",
+                        metadata={"step": str(step_index), "wait_tick": str(wait_tick)},
+                    )
+                    if wait_tick == 1 or wait_tick % 2 == 0:
+                        yield ServerEvent(type="agent_response", text="Still gathering details from this page.")
         elif plan.action_type == "stop":
+            yield self._voice_state("RESULT")
             yield ServerEvent(type="agent_response", text="Stopping now.")
             return
         else:
+            yield self._voice_state("RESULT")
             yield ServerEvent(type="agent_response", text="How would you like me to proceed?")
             return
 
@@ -212,7 +275,7 @@ class AccessibilityCopilot:
             self.state.last_url = snapshot.current_url
         self.state.last_page_snapshot = snapshot.model_dump(exclude={"screenshot_b64"})
 
-        quick_assessment = self.brain.analyze_page_risk_fast(transcript=transcript, snapshot=snapshot)
+        quick_assessment = await self.brain.analyze_page_risk_fast(transcript=transcript, snapshot=snapshot)
         self.state.last_risk_level = quick_assessment.risk_level
         yield ServerEvent(
             type="risk_update",
@@ -235,8 +298,29 @@ class AccessibilityCopilot:
         domain_verification_task = asyncio.create_task(
             self._verify_domain_if_needed(plan=plan, transcript=transcript, snapshot=snapshot)
         )
-        assessment = await deep_assessment_task
-        domain_verification = await domain_verification_task
+        combined_task = asyncio.gather(deep_assessment_task, domain_verification_task)
+        wait_tick = 0
+        while True:
+            try:
+                assessment, domain_verification = await asyncio.wait_for(
+                    asyncio.shield(combined_task),
+                    timeout=self.progress_ping_sec,
+                )
+                break
+            except asyncio.TimeoutError:
+                wait_tick += 1
+                yield ServerEvent(
+                    type="status",
+                    text="Deep analysis still running.",
+                    metadata={
+                        "step": str(step_index),
+                        "analysis_stage": "deep",
+                        "wait_tick": str(wait_tick),
+                    },
+                )
+                if wait_tick == 1 or wait_tick % 2 == 0:
+                    yield ServerEvent(type="agent_response", text="I am still checking safety signals.")
+
         assessment = self._apply_domain_verification_assessment(assessment, domain_verification)
 
         if (
@@ -249,6 +333,13 @@ class AccessibilityCopilot:
                 type="risk_update",
                 risk_level=assessment.risk_level,
                 metadata={"analysis_stage": "deep", "step": str(step_index)},
+            )
+            yield ServerEvent(
+                type="agent_response",
+                text=(
+                    f"Update: deeper analysis changed risk from {quick_assessment.risk_level} "
+                    f"to {assessment.risk_level}."
+                ),
             )
 
         yield ServerEvent(
@@ -264,10 +355,12 @@ class AccessibilityCopilot:
         )
 
         if not result.success:
+            yield self._voice_state("RESULT")
             yield ServerEvent(type="agent_response", text=result.message)
             return
 
         voice_message = assessment.voice_message or self._voice_message(assessment.risk_level)
+        yield self._voice_state("RESULT")
         yield ServerEvent(type="agent_response", text=f"{voice_message} {result.message}")
 
         if result.extracted_data is not None:
@@ -279,6 +372,7 @@ class AccessibilityCopilot:
 
         if assessment.recommended_action == "block":
             self.state.last_risk_level = "DANGER"
+            yield self._voice_state("SAFETY_CHECK")
             yield ServerEvent(type="agent_response", text="I am blocking further automated actions on this page.")
             return
 
@@ -286,6 +380,7 @@ class AccessibilityCopilot:
             phrase = assessment.confirmation_phrase or "yes, proceed safely"
             self.state.pending_confirmation = True
             self.state.pending_confirmation_phrase = phrase
+            yield self._voice_state("SAFETY_CHECK")
             yield ServerEvent(
                 type="agent_response",
                 text=f"Before continuing, please say exactly: '{phrase}'.",
@@ -301,6 +396,9 @@ class AccessibilityCopilot:
         phrase = f"yes, pay {amount_readback} to {payee_readback}"
         readback = f"I read the amount as {amount_readback} to {payee_readback}."
         return phrase, readback
+
+    def _voice_state(self, state: VoiceState, text: str | None = None) -> ServerEvent:
+        return ServerEvent(type="voice_state", voice_state=state, text=text)
 
     def _plan_signature(self, plan: ActionPlan) -> str:
         url = str(plan.url) if plan.url else ""
@@ -394,10 +492,11 @@ class AccessibilityCopilot:
         )
 
     def _voice_message(self, risk_level: RiskLevel) -> str:
+        """Generate natural, friendly voice messages."""
         if risk_level == "DANGER":
-            return "Hold on. This page appears risky or deceptive."
-        if risk_level == "HIGH_RISK":
-            return "I found a high-risk step and will proceed carefully."
+            return "Whoa, hold on! This page looks suspicious to me. I think it might be a scam."
+        if risk_level == "High Risk":
+            return "Hey, I found a payment button. Want me to click it? Just say yes or no."
         if risk_level == "CAUTION":
-            return "This page requests sensitive information."
-        return "Navigation looks safe so far."
+            return "I see a form here. What would you like me to fill in?"
+        return "Page loaded! What can I help you with?"

@@ -23,10 +23,13 @@ class Settings:
     enable_stagehand: bool = os.getenv("ENABLE_STAGEHAND", "0").lower() in {"1", "true", "yes"}
     claude_timeout_sec: float = float(os.getenv("CLAUDE_TIMEOUT_SEC", "10"))
     enable_claude: bool = os.getenv("ENABLE_CLAUDE", "0").lower() in {"1", "true", "yes"}
+    enable_fast_risk_model: bool = os.getenv("ENABLE_FAST_RISK_MODEL", "1").lower() in {"1", "true", "yes"}
+    fast_risk_model_name: str = os.getenv("FAST_RISK_MODEL_NAME", "claude-3-5-haiku-20241022")
+    fast_risk_timeout_sec: float = float(os.getenv("FAST_RISK_TIMEOUT_SEC", "2.2"))
     safe_payment_domains: str = os.getenv("SAFE_PAYMENT_DOMAINS", "pge.com,google.com")
     enable_cartesia_tts: bool = os.getenv("ENABLE_CARTESIA_TTS", "0").lower() in {"1", "true", "yes"}
     cartesia_model_id: str = os.getenv("CARTESIA_MODEL_ID", "sonic-3")
-    cartesia_voice_id: str = os.getenv("CARTESIA_VOICE_ID", "f786b574-daa5-4673-aa0c-cbe3e8534c02")
+    cartesia_voice_id: str = os.getenv("CARTESIA_VOICE_ID", "f9836c6e-a0bd-460e-9d3c-f7299fa60f94")
     cartesia_voice_id_caution: str = os.getenv("CARTESIA_VOICE_ID_CAUTION", "")
     cartesia_voice_id_high_risk: str = os.getenv("CARTESIA_VOICE_ID_HIGH_RISK", "")
     cartesia_voice_id_danger: str = os.getenv("CARTESIA_VOICE_ID_DANGER", "")
