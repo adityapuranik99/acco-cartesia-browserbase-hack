@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from agent import AccessibilityCopilot
@@ -133,4 +134,12 @@ def build_voice_agent_app() -> Any:
 
 
 if __name__ == "__main__":
-    build_voice_agent_app().run()
+    app = build_voice_agent_app()
+    line_port = int(os.getenv("LINE_AGENT_PORT", "8001"))
+    try:
+        app.run(host="0.0.0.0", port=line_port)
+    except TypeError:
+        try:
+            app.run(port=line_port)
+        except TypeError:
+            app.run()

@@ -62,10 +62,16 @@ async def create_cartesia_access_token(payload: dict[str, int | bool] | None = N
     expires_in = int(body.get("expires_in", 600))
     expires_in = max(60, min(expires_in, 3600))
     grant_agent = bool(body.get("grant_agent", True))
+    grant_tts = bool(body.get("grant_tts", True))
+    grant_stt = bool(body.get("grant_stt", True))
 
     request_payload: dict[str, object] = {
         "expires_in": expires_in,
-        "grants": {"agent": grant_agent},
+        "grants": {
+            "agent": grant_agent,
+            "tts": grant_tts,
+            "stt": grant_stt,
+        },
     }
 
     req = urllib_request.Request(
@@ -74,6 +80,7 @@ async def create_cartesia_access_token(payload: dict[str, int | bool] | None = N
         method="POST",
         headers={
             "Authorization": f"Bearer {settings.cartesia_api_key}",
+            "X-API-Key": settings.cartesia_api_key,
             "Cartesia-Version": "2025-04-16",
             "Content-Type": "application/json",
         },
@@ -88,14 +95,32 @@ async def create_cartesia_access_token(payload: dict[str, int | bool] | None = N
         return token_payload
     except urllib_error.HTTPError as exc:
         detail = "Cartesia token request failed."
+        status = 502
+        error_body = ""
         try:
             error_body = exc.read().decode("utf-8")
             parsed = json.loads(error_body)
             if isinstance(parsed, dict):
-                detail = parsed.get("error", parsed.get("message", detail))
+                error_value = parsed.get("error")
+                if isinstance(error_value, dict):
+                    detail = error_value.get("message") or parsed.get("message") or detail
+                elif isinstance(error_value, str) and error_value.strip():
+                    detail = error_value
+                else:
+                    message = parsed.get("message")
+                    if isinstance(message, str) and message.strip():
+                        detail = message
+                cartesia_status = parsed.get("status")
+                if isinstance(cartesia_status, int):
+                    status = cartesia_status
         except Exception:
             pass
-        raise HTTPException(status_code=502, detail=detail) from exc
+        if error_body and detail == "Cartesia token request failed.":
+            detail = error_body[:500]
+        if 400 <= exc.code < 500:
+            status = exc.code
+        detail = f"Cartesia /access-token {exc.code}: {detail}"
+        raise HTTPException(status_code=status, detail=detail) from exc
     except urllib_error.URLError as exc:
         raise HTTPException(status_code=502, detail="Unable to reach Cartesia token endpoint.") from exc
 
