@@ -1,6 +1,8 @@
 import json
 from contextlib import suppress
 import asyncio
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
 import uvicorn
 from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
@@ -49,6 +51,53 @@ async def stt_transcribe(audio: UploadFile = File(...)) -> dict[str, str]:
     if not transcript:
         raise HTTPException(status_code=422, detail="No transcript returned.")
     return {"transcript": transcript}
+
+
+@app.post("/cartesia/access-token")
+async def create_cartesia_access_token(payload: dict[str, int | bool] | None = None) -> dict[str, object]:
+    if not settings.cartesia_api_key:
+        raise HTTPException(status_code=400, detail="CARTESIA_API_KEY is not configured.")
+
+    body = payload or {}
+    expires_in = int(body.get("expires_in", 600))
+    expires_in = max(60, min(expires_in, 3600))
+    grant_agent = bool(body.get("grant_agent", True))
+
+    request_payload: dict[str, object] = {
+        "expires_in": expires_in,
+        "grants": {"agent": grant_agent},
+    }
+
+    req = urllib_request.Request(
+        url="https://api.cartesia.ai/access-token",
+        data=json.dumps(request_payload).encode("utf-8"),
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {settings.cartesia_api_key}",
+            "Cartesia-Version": "2025-04-16",
+            "Content-Type": "application/json",
+        },
+    )
+
+    try:
+        with urllib_request.urlopen(req, timeout=15) as response:
+            raw = response.read().decode("utf-8")
+        token_payload = json.loads(raw)
+        if not isinstance(token_payload, dict):
+            raise HTTPException(status_code=502, detail="Unexpected Cartesia token response format.")
+        return token_payload
+    except urllib_error.HTTPError as exc:
+        detail = "Cartesia token request failed."
+        try:
+            error_body = exc.read().decode("utf-8")
+            parsed = json.loads(error_body)
+            if isinstance(parsed, dict):
+                detail = parsed.get("error", parsed.get("message", detail))
+        except Exception:
+            pass
+        raise HTTPException(status_code=502, detail=detail) from exc
+    except urllib_error.URLError as exc:
+        raise HTTPException(status_code=502, detail="Unable to reach Cartesia token endpoint.") from exc
 
 
 @app.websocket("/ws")

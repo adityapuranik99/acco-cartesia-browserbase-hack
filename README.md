@@ -243,6 +243,14 @@ cd backend && python line_agent.py
 **Connect**: `ws://localhost:8000/ws`
 **UI Stream (Line mode)**: `ws://localhost:8000/ws/ui`
 
+Line access token (backend-minted):
+
+```bash
+curl -X POST http://localhost:8000/cartesia/access-token \
+  -H "Content-Type: application/json" \
+  -d '{"expires_in":600,"grant_agent":true}'
+```
+
 **Send** (client → server):
 ```json
 {"type": "transcript", "text": "go to google.com"}
