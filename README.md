@@ -36,6 +36,15 @@ python main.py
 
 Backend runs on `http://localhost:8000`
 
+Optional Cartesia Line runtime (separate from current `/ws` flow):
+
+```bash
+cd backend
+python line_agent.py
+```
+
+This runs the same copilot logic via Cartesia Line's real-time voice transport.
+
 ### 3. Run Frontend
 
 ```bash
@@ -55,6 +64,7 @@ Frontend runs on `http://localhost:5173`
 - **Browser Controller** ([browser_controller.py](backend/browser_controller.py)): Browserbase/Stagehand adapter with fallback stub mode
 - **Domain Verifier** ([domain_verifier.py](backend/domain_verifier.py)): Exa-powered official domain verification
 - **Voice** ([voice.py](backend/voice.py)): Cartesia STT/TTS integration with risk-based voice profiles
+- **Line Runtime** ([line_agent.py](backend/line_agent.py)): Separate Cartesia Line voice transport wrapper over the same copilot logic
 
 ### Frontend Components
 
@@ -238,6 +248,7 @@ ENABLE_CARTESIA_TTS=1
 │   ├── browser_controller.py # Browserbase/Stagehand wrapper
 │   ├── domain_verifier.py    # Exa domain verification
 │   ├── voice.py              # Cartesia STT/TTS
+│   ├── line_agent.py         # Optional Cartesia Line runtime
 │   ├── models.py             # Pydantic data models
 │   ├── config.py             # Environment configuration
 │   └── main.py               # FastAPI server
